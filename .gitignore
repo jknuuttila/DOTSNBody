@@ -1,4 +1,5 @@
 ﻿.vs
 Library
-Packages
 obj
+Temp
+*.csproj

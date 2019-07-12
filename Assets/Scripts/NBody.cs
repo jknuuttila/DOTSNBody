@@ -2,11 +2,11 @@
 using Unity.Jobs;
 using Unity.Collections;
 using Unity.Entities;
-using Unity.Rendering;
 using Unity.Transforms;
 using Unity.Mathematics;
 using Unity.Burst;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.LWRP;
 
 public struct Position : IComponentData
 {
@@ -32,11 +32,9 @@ public class NBody : MonoBehaviour
 {
     [SerializeField] public Mesh mesh;
     [SerializeField] public Material material;
-    [SerializeField] public Material particleMaterial;
-    [SerializeField] public static Material ParticleMaterial;
 
     public static readonly int NumMass = 10;
-    public static readonly int NumMassless = 500000;
+    public static readonly int NumMassless = 300000;
     public static readonly int NumTotal = NumMass + NumMassless;
 
     static public float2 RandomFloat2(float min, float max)
@@ -55,16 +53,10 @@ public class NBody : MonoBehaviour
             typeof(Position),
             typeof(Velocity),
             typeof(Acceleration),
-            typeof(Mass),
-            typeof(RenderMesh)
+            typeof(Mass)
             );
         em.SetComponentData<Position>(e, new Position { pos = pos });
         em.SetComponentData<Mass>(e, new Mass { mass = mass });
-        em.SetSharedComponentData<RenderMesh>(e, new RenderMesh
-        {
-            mesh = mesh,
-            material = material
-        });
     }
 
     public void CreateMasslessParticle(float2 pos)
@@ -82,8 +74,6 @@ public class NBody : MonoBehaviour
 
     public void Start()
     {
-        ParticleMaterial = particleMaterial;
-
         float D = 8;
 
         for (int i = 0; i < NumMass; ++i)
@@ -205,8 +195,7 @@ public class ComputeTranslation : JobComponentSystem
 }
 #endif
 
-[UpdateInGroup(typeof(PresentationSystemGroup))]
-[UpdateBefore(typeof(RenderParticlesSystem))]
+[UpdateAfter(typeof(Movement))]
 public class GatherParticlePositionsSystem : JobComponentSystem
 {
     public EntityQuery positionQuery;
@@ -234,52 +223,6 @@ public class GatherParticlePositionsSystem : JobComponentSystem
         particlePositions = new NativeArray<float4>(positionQuery.CalculateLength(), Allocator.TempJob);
         particleJobHandle = new GatherPosJob { positions = particlePositions }.Schedule(this, inputDeps);
         return particleJobHandle;
-    }
-}
-
-[UpdateInGroup(typeof(PresentationSystemGroup))]
-public class RenderParticlesSystem : ComponentSystem
-{
-    CommandBuffer cmd;
-    MaterialPropertyBlock props;
-    ComputeBuffer particlePositions;
-
-    protected override void OnCreate()
-    {
-        props = new MaterialPropertyBlock();
-        particlePositions = new ComputeBuffer(NBody.NumTotal, 16, ComputeBufferType.Default);
-    }
-
-    protected override void OnDestroy()
-    {
-        cmd.Dispose();
-    }
-
-    protected override void OnUpdate()
-    {
-        if (cmd is null)
-        {
-            cmd = new CommandBuffer();
-            cmd.name = "RenderParticlesSystem";
-            Camera.main.AddCommandBuffer(CameraEvent.AfterForwardOpaque, cmd);
-        }
-
-        cmd.Clear();
-        props.Clear();
-
-        GatherParticlePositionsSystem.particleJobHandle.Complete();
-        particlePositions.SetData(GatherParticlePositionsSystem.particlePositions);
-
-        NBody.ParticleMaterial.SetPass(0);
-        NBody.ParticleMaterial.SetBuffer("_vertexPositions", particlePositions);
-
-        cmd.DrawProcedural(new Matrix4x4(),
-            NBody.ParticleMaterial,
-            -1,
-            MeshTopology.Points,
-            GatherParticlePositionsSystem.particlePositions.Length);
-
-        GatherParticlePositionsSystem.particlePositions.Dispose();
     }
 }
 
