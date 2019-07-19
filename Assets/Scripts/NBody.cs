@@ -204,17 +204,21 @@ public class GatherParticlePositionsSystem : JobComponentSystem
 
     protected override void OnCreate()
     {
-        positionQuery = GetEntityQuery(ComponentType.ReadOnly<Position>());
+        positionQuery = GetEntityQuery(
+            ComponentType.ReadOnly<Position>(),
+            ComponentType.ReadOnly<Velocity>());
     }
 
     [BurstCompile]
-    public struct GatherPosJob : IJobForEachWithEntity<Position>
+    public struct GatherPosJob : IJobForEachWithEntity<Position, Velocity>
     {
         public NativeArray<float4> positions;
 
-        public void Execute(Entity e, int index, [ReadOnly] ref Position p)
+        public void Execute(Entity e, int index,
+            [ReadOnly] ref Position p,
+            [ReadOnly] ref Velocity v)
         {
-            positions[index] = new float4(p.pos.x, 0, p.pos.y, 1);
+            positions[index] = new float4(p.pos.x, p.pos.y, math.length(v.vel), 0);
         }
     }
 

@@ -53,6 +53,7 @@ public class RenderParticlesPass : ScriptableRenderPass
 
     public RenderParticlesPass()
     {
+        renderPassEvent = RenderPassEvent.AfterRenderingTransparents;
     }
 
     public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -61,6 +62,7 @@ public class RenderParticlesPass : ScriptableRenderPass
             return;
 
         GatherParticlePositionsSystem.particleJobHandle.Complete();
+        int numParticles = GatherParticlePositionsSystem.particlePositions.Length;
         particlePositions.SetData(GatherParticlePositionsSystem.particlePositions);
         GatherParticlePositionsSystem.particlePositions.Dispose();
 
@@ -71,7 +73,7 @@ public class RenderParticlesPass : ScriptableRenderPass
             particleMaterial,
             -1,
             MeshTopology.Points,
-            GatherParticlePositionsSystem.particlePositions.Length);
+            numParticles);
 
         context.ExecuteCommandBuffer(cmd);
         CommandBufferPool.Release(cmd);

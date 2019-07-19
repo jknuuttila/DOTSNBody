@@ -27,9 +27,17 @@
             v2f vert(uint vid : SV_VertexID)
             {
                 v2f o;
-				float4 vPos = float4(_vertexPositions[vid].xyz, 1);
-				o.pos = mul(UNITY_MATRIX_VP, vPos);
-				o.color = float4(1, 0, 0, 1);
+				float4 vertex = _vertexPositions[vid];
+				float4 worldPos = float4(vertex.x, 0, vertex.y, 1);
+
+				o.pos = mul(UNITY_MATRIX_VP, worldPos);
+
+				float v = vertex.z;
+				float m = vertex.w + 1;
+				float E = m * v * v;
+				E *= 1;
+
+				o.color = float4(E, E, E, 1);
                 return o;
             }
 
