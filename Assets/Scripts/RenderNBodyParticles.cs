@@ -18,27 +18,22 @@ public class RenderNBodyParticles : ScriptableRendererFeature
     }
 
     public RenderNBodySettings settings = new RenderNBodySettings();
-    public ComputeBuffer particlePositions;
     public RenderParticlesPass particlePass;
 
     public override void Create()
     {
-        particlePositions = new ComputeBuffer(NBody.NumTotal, 16, ComputeBufferType.Default);
         particlePass = new RenderParticlesPass
         {
-            particlePositions = particlePositions,
             particleMaterial = settings.particleMaterial,
             falseColorTexture = settings.falseColorTexture,
         };
     }
 
-    public void OnDestroy()
-    {
-        particlePositions.Dispose();
-    }
-
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
+        if (ParticleBuffer.particlePositions is null)
+            ScriptableObject.CreateInstance<ParticleBuffer>();
+
         if (!GatherParticlePositionsSystem.particlePositions.IsCreated)
             return;
 
@@ -46,11 +41,26 @@ public class RenderNBodyParticles : ScriptableRendererFeature
     }
 }
 
+public class ParticleBuffer : ScriptableObject
+{
+    public static ComputeBuffer particlePositions;
+
+    public void OnEnable()
+    {
+        particlePositions = new ComputeBuffer(NBody.NumTotal, 16, ComputeBufferType.Default);
+    }
+
+    public void OnDisable()
+    {
+        particlePositions.Dispose();
+        particlePositions = null;
+    }
+}
+
 public class RenderParticlesPass : ScriptableRenderPass
 {
     public const string Tag = "RenderParticlesPass";
 
-    public ComputeBuffer particlePositions;
     public Material particleMaterial;
     public Texture2D falseColorTexture;
 
@@ -61,13 +71,14 @@ public class RenderParticlesPass : ScriptableRenderPass
 
     public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
     {
-        if (!GatherParticlePositionsSystem.particlePositions.IsCreated)
+        var particlePositions = ParticleBuffer.particlePositions;
+
+        if (!GatherParticlePositionsSystem.particlePositions.IsCreated || particlePositions is null)
             return;
 
         GatherParticlePositionsSystem.particleJobHandle.Complete();
         int numParticles = GatherParticlePositionsSystem.particlePositions.Length;
         particlePositions.SetData(GatherParticlePositionsSystem.particlePositions);
-        GatherParticlePositionsSystem.particlePositions.Dispose();
 
         var cmd = CommandBufferPool.Get(Tag);
 

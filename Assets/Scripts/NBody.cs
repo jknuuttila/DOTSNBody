@@ -1,10 +1,12 @@
 ﻿using UnityEngine;
 using Unity.Jobs;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Transforms;
 using Unity.Mathematics;
 using Unity.Burst;
+using System.Collections.Generic;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.LWRP;
 
@@ -28,14 +30,20 @@ public struct Mass : IComponentData
     public float mass;
 }
 
+public struct HasMass : IComponentData {}
+
 public class NBody : MonoBehaviour
 {
     [SerializeField] public Mesh mesh;
     [SerializeField] public Material material;
 
     public static readonly int NumMass = 10;
-    public static readonly int NumMassless = 300000;
+    public static readonly int NumMassless = 500000;
     public static readonly int NumTotal = NumMass + NumMassless;
+    public static readonly int NumParticlesPerJob = 10000;
+
+    private EntityArchetype masslessArchetype;
+    private EntityArchetype massArchetype;
 
     static public float2 RandomFloat2(float min, float max)
     {
@@ -47,14 +55,7 @@ public class NBody : MonoBehaviour
     public void CreateMassParticle(float2 pos, float mass)
     {
         var em = World.Active.EntityManager;
-        Entity e = em.CreateEntity(
-            typeof(LocalToWorld),
-            typeof(Translation),
-            typeof(Position),
-            typeof(Velocity),
-            typeof(Acceleration),
-            typeof(Mass)
-            );
+        Entity e = em.CreateEntity(massArchetype);
         em.SetComponentData<Position>(e, new Position { pos = pos });
         em.SetComponentData<Mass>(e, new Mass { mass = mass });
     }
@@ -62,25 +63,77 @@ public class NBody : MonoBehaviour
     public void CreateMasslessParticle(float2 pos)
     {
         var em = World.Active.EntityManager;
-        Entity e = em.CreateEntity(
-            typeof(LocalToWorld),
-            typeof(Translation),
-            typeof(Position),
-            typeof(Velocity),
-            typeof(Acceleration)
-            );
-        em.SetComponentData<Position>(e, new Position { pos = pos });
+        Entity e = em.CreateEntity(masslessArchetype);
+    }
+
+    struct CreateMasslessJob : IJobParallelFor
+    {
+        public EntityArchetype archetype;
+        public EntityCommandBuffer.Concurrent ecb;
+        public Unity.Mathematics.Random random;
+        public bool randomInit;
+
+        public float posMin;
+        public float posMax;
+
+        [NativeSetThreadIndex]
+        public int threadIndex;
+
+        public void Execute(int index)
+        {
+            if (randomInit)
+            {
+                random = new Unity.Mathematics.Random((uint)threadIndex);
+                randomInit = false;
+            }
+
+            Entity e = ecb.CreateEntity(index, archetype);
+            float2 pos = random.NextFloat2(posMin, posMax);
+            ecb.SetComponent<Position>(index, e, new Position { pos = pos });
+        }
     }
 
     public void Start()
     {
+        masslessArchetype = World.Active.EntityManager.CreateArchetype(
+            typeof(LocalToWorld),
+            typeof(Translation),
+            typeof(Position),
+            typeof(Velocity),
+            typeof(Acceleration),
+            typeof(Mass)
+            );
+
+        massArchetype = World.Active.EntityManager.CreateArchetype(
+            typeof(LocalToWorld),
+            typeof(Translation),
+            typeof(Position),
+            typeof(Velocity),
+            typeof(Acceleration),
+            typeof(Mass),
+            typeof(HasMass)
+            );
+
         float D = 8;
 
         for (int i = 0; i < NumMass; ++i)
-            CreateMassParticle(RandomFloat2(-D, D), 0.1f);
+            CreateMassParticle(RandomFloat2(-D, D), 0.15f);
 
-        for (int i = 0; i < NumMassless; ++i)
-            CreateMasslessParticle(RandomFloat2(-D, D));
+        var ecb = new EntityCommandBuffer(Allocator.TempJob);
+
+        var createMassless = new CreateMasslessJob
+        {
+            archetype = masslessArchetype,
+            ecb = ecb.ToConcurrent(),
+            posMin = -D,
+            posMax = D,
+            randomInit = true,
+            threadIndex = 0, // patched by job system
+        }.Schedule(NumMassless, NumParticlesPerJob);
+        createMassless.Complete();
+
+        ecb.Playback(World.Active.EntityManager);
+        ecb.Dispose();
     }
 }
 
@@ -113,7 +166,8 @@ public class Gravity : JobComponentSystem
     {
         m_GravitySources = GetEntityQuery(
             ComponentType.ReadOnly(typeof(Position)),
-            ComponentType.ReadOnly(typeof(Mass)));
+            ComponentType.ReadOnly(typeof(Mass)),
+            ComponentType.ReadOnly(typeof(HasMass)));
     }
 
     protected override JobHandle OnUpdate(JobHandle inputDeps)
@@ -175,26 +229,6 @@ public class Movement : JobComponentSystem
     }
 }
 
-#if false
-[UpdateBefore(typeof(TransformSystemGroup))]
-public class ComputeTranslation : JobComponentSystem
-{
-    protected override JobHandle OnUpdate(JobHandle inputDeps)
-    {
-        return new TranslationJob().Schedule(this, inputDeps);
-    }
-
-    [BurstCompile]
-    public struct TranslationJob : IJobForEach<Position, Translation>
-    {
-        public void Execute(ref Position c0, ref Translation c1)
-        {
-            c1.Value = new float3(c0.pos.x, 0, c0.pos.y);
-        }
-    }
-}
-#endif
-
 [UpdateAfter(typeof(Movement))]
 public class GatherParticlePositionsSystem : JobComponentSystem
 {
@@ -207,37 +241,50 @@ public class GatherParticlePositionsSystem : JobComponentSystem
     {
         positionQuery = GetEntityQuery(
             ComponentType.ReadOnly<Position>(),
-            ComponentType.ReadOnly<Velocity>());
+            ComponentType.ReadOnly<Velocity>(),
+            ComponentType.ReadOnly<Mass>());
     }
 
     [BurstCompile]
-    public struct GatherPosJob : IJobForEachWithEntity<Position, Velocity>
+    public struct GatherPosJob : IJobForEachWithEntity<Position, Velocity, Mass>
     {
         public NativeArray<float4> positions;
-        [ReadOnly] public ComponentDataFromEntity<Mass> mass;
 
         public void Execute(Entity e, int index,
             [ReadOnly] ref Position p,
-            [ReadOnly] ref Velocity v)
+            [ReadOnly] ref Velocity v,
+            [ReadOnly] ref Mass m)
         {
-            float m = 0;
-
-            if (mass.Exists(e))
-                m = mass[e].mass;
-
-            positions[index] = new float4(p.pos.x, p.pos.y, math.length(v.vel), m);
+            positions[index] = new float4(p.pos.x, p.pos.y, math.length(v.vel), m.mass);
         }
     }
 
     protected override JobHandle OnUpdate(JobHandle inputDeps)
     {
-        particlePositions = new NativeArray<float4>(positionQuery.CalculateLength(), Allocator.TempJob);
+        DestroyPositions();
+
+        particlePositions = new NativeArray<float4>(
+            positionQuery.CalculateLength(),
+            Allocator.TempJob,
+            NativeArrayOptions.UninitializedMemory);
+
         particleJobHandle = new GatherPosJob
         {
             positions = particlePositions,
-            mass = GetComponentDataFromEntity<Mass>(true),
         }.Schedule(this, inputDeps);
+
         return particleJobHandle;
+    }
+
+    protected override void OnDestroy()
+    {
+        DestroyPositions();
+    }
+
+    private void DestroyPositions()
+    {
+        if (particlePositions.IsCreated)
+            particlePositions.Dispose();
     }
 }
 
