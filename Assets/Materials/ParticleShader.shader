@@ -37,7 +37,7 @@
 				o.pos = mul(UNITY_MATRIX_VP, worldPos);
 
 				float v = vertex.z;
-				float m = 100 * vertex.w + 1;
+				float m = 3e3 * vertex.w + 1;
 				float E = m * v * v;
 
 				E *= 0.5;
