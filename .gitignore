@@ -3,3 +3,5 @@ Library
 obj
 Temp
 *.csproj
+*.swp
+Build
