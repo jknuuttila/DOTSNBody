@@ -1,8 +1,10 @@
 ﻿Shader "Unlit/ParticleShader"
 {
-    Properties
-    {
+	Properties
+	{
+		_FalseColor("False color", 2D) = "defaulttexture" {}
     }
+
     SubShader
     {
         Tags { "RenderType"="Opaque" }
@@ -10,6 +12,7 @@
 
         Pass
         {
+			Blend One One
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -22,6 +25,7 @@
 				float4 pos : SV_Position;
             };
 
+			UNITY_DECLARE_TEX2D(_FalseColor);
 			StructuredBuffer<float4> _vertexPositions;
 
             v2f vert(uint vid : SV_VertexID)
@@ -33,17 +37,23 @@
 				o.pos = mul(UNITY_MATRIX_VP, worldPos);
 
 				float v = vertex.z;
-				float m = vertex.w + 1;
+				float m = 100 * vertex.w + 1;
 				float E = m * v * v;
-				E *= 1;
 
-				o.color = float4(E, E, E, 1);
+				E *= 0.5;
+
+				float intensity = max(0.1, log10(E));
+
+				o.color = float4(E, intensity, 0, 0);
                 return o;
             }
 
-            float4 frag (v2f i) : SV_Target
-            {
-                return i.color;
+			float4 frag (v2f i) : SV_Target
+			{
+				float E = i.color.x;
+				float intensity = i.color.y;
+				float3 falseColor = UNITY_SAMPLE_TEX2D(_FalseColor, float2(0.5, intensity)).rgb;
+				return float4(E * falseColor, 1);
             }
             ENDCG
         }

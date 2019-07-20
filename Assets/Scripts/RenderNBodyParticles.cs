@@ -14,6 +14,7 @@ public class RenderNBodyParticles : ScriptableRendererFeature
     public class RenderNBodySettings
     {
         public Material particleMaterial;
+        public Texture2D falseColorTexture;
     }
 
     public RenderNBodySettings settings = new RenderNBodySettings();
@@ -27,6 +28,7 @@ public class RenderNBodyParticles : ScriptableRendererFeature
         {
             particlePositions = particlePositions,
             particleMaterial = settings.particleMaterial,
+            falseColorTexture = settings.falseColorTexture,
         };
     }
 
@@ -50,6 +52,7 @@ public class RenderParticlesPass : ScriptableRenderPass
 
     public ComputeBuffer particlePositions;
     public Material particleMaterial;
+    public Texture2D falseColorTexture;
 
     public RenderParticlesPass()
     {
@@ -69,6 +72,8 @@ public class RenderParticlesPass : ScriptableRenderPass
         var cmd = CommandBufferPool.Get(Tag);
 
         cmd.SetGlobalBuffer("_vertexPositions", particlePositions);
+        cmd.SetGlobalTexture("_FalseColor", falseColorTexture);
+
         cmd.DrawProcedural(new Matrix4x4(),
             particleMaterial,
             -1,

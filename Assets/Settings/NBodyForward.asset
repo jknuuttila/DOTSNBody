@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   settings:
     particleMaterial: {fileID: 2100000, guid: 98d9253306b70c346ac3074c1842549a, type: 2}
+    falseColorTexture: {fileID: 2800000, guid: 494cb25f96c5453419352fedb6603887, type: 3}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

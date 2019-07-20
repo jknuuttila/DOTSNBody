@@ -199,6 +199,7 @@ public class ComputeTranslation : JobComponentSystem
 public class GatherParticlePositionsSystem : JobComponentSystem
 {
     public EntityQuery positionQuery;
+    public EntityQuery positionMassQuery;
     public static NativeArray<float4> particlePositions;
     public static JobHandle particleJobHandle;
 
@@ -213,19 +214,29 @@ public class GatherParticlePositionsSystem : JobComponentSystem
     public struct GatherPosJob : IJobForEachWithEntity<Position, Velocity>
     {
         public NativeArray<float4> positions;
+        [ReadOnly] public ComponentDataFromEntity<Mass> mass;
 
         public void Execute(Entity e, int index,
             [ReadOnly] ref Position p,
             [ReadOnly] ref Velocity v)
         {
-            positions[index] = new float4(p.pos.x, p.pos.y, math.length(v.vel), 0);
+            float m = 0;
+
+            if (mass.Exists(e))
+                m = mass[e].mass;
+
+            positions[index] = new float4(p.pos.x, p.pos.y, math.length(v.vel), m);
         }
     }
 
     protected override JobHandle OnUpdate(JobHandle inputDeps)
     {
         particlePositions = new NativeArray<float4>(positionQuery.CalculateLength(), Allocator.TempJob);
-        particleJobHandle = new GatherPosJob { positions = particlePositions }.Schedule(this, inputDeps);
+        particleJobHandle = new GatherPosJob
+        {
+            positions = particlePositions,
+            mass = GetComponentDataFromEntity<Mass>(true),
+        }.Schedule(this, inputDeps);
         return particleJobHandle;
     }
 }
