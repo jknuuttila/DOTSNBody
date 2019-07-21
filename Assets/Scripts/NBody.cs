@@ -96,7 +96,6 @@ public class NBody : MonoBehaviour
     public void Start()
     {
         masslessArchetype = World.Active.EntityManager.CreateArchetype(
-            typeof(LocalToWorld),
             typeof(Translation),
             typeof(Position),
             typeof(Velocity),
@@ -105,7 +104,6 @@ public class NBody : MonoBehaviour
             );
 
         massArchetype = World.Active.EntityManager.CreateArchetype(
-            typeof(LocalToWorld),
             typeof(Translation),
             typeof(Position),
             typeof(Velocity),
